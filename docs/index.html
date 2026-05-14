@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <meta name="title" content="RUAC: Segment Anything with Robust Uncertainty-Accuracy Correlation">
+  <meta name="description" content="A SAM2 addon that produces per-pixel uncertainty aligned with prediction errors across 23 unseen image domains. ICML 2026.">
+  <meta name="keywords" content="SAM2, segmentation, uncertainty estimation, domain generalization, adversarial training, Bayesian deep learning, ICML 2026">
+  <meta name="author" content="Hongyou Zhou, Marc Toussaint, Ling Shao, Zihan Ye">
+  <meta name="robots" content="index, follow">
+
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="TU Berlin">
+  <meta property="og:title" content="RUAC: Segment Anything with Robust Uncertainty-Accuracy Correlation">
+  <meta property="og:description" content="A SAM2 addon that produces per-pixel uncertainty aligned with prediction errors across 23 unseen image domains. ICML 2026.">
+  <meta property="og:url" content="https://hongyouzhou.github.io/ruac/">
+  <meta property="og:image" content="https://hongyouzhou.github.io/ruac/static/images/banner.png">
+  <meta property="og:image:alt" content="RUAC overview: vanilla SAM2 vs RUAC mask + uncertainty maps across object, scene, scientific, egocentric domains">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="RUAC: Segment Anything with Robust Uncertainty-Accuracy Correlation">
+  <meta name="twitter:description" content="A SAM2 addon that produces per-pixel uncertainty aligned with prediction errors across 23 unseen image domains. ICML 2026.">
+  <meta name="twitter:image" content="https://hongyouzhou.github.io/ruac/static/images/banner.png">
+
+  <meta name="citation_title" content="Segment Anything with Robust Uncertainty-Accuracy Correlation">
+  <meta name="citation_author" content="Zhou, Hongyou">
+  <meta name="citation_author" content="Toussaint, Marc">
+  <meta name="citation_author" content="Shao, Ling">
+  <meta name="citation_author" content="Ye, Zihan">
+  <meta name="citation_publication_date" content="2026">
+  <meta name="citation_conference_title" content="International Conference on Machine Learning (ICML)">
+
+  <meta name="theme-color" content="#2563eb">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <title>RUAC: Robust Uncertainty-Accuracy Correlation for SAM2 (ICML 2026)</title>
+
+  <link rel="icon" type="image/x-icon" href="static/images/favicon.ico">
+
+  <link rel="stylesheet" href="static/css/bulma.min.css">
+  <link rel="stylesheet" href="static/css/index.css">
+  <link rel="stylesheet" href="static/css/fontawesome.all.min.css">
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+<main id="main-content">
+
+  <!-- Hero: title, authors, affiliations, links -->
+  <section class="hero">
+    <div class="hero-body">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered">
+          <div class="column has-text-centered">
+            <h1 class="title is-1 publication-title">
+              Segment Anything with Robust<br>Uncertainty-Accuracy Correlation
+            </h1>
+
+            <div class="is-size-5 publication-authors">
+              <span class="author-block">Hongyou Zhou<sup>1</sup>,</span>
+              <span class="author-block">Marc Toussaint<sup>1</sup>,</span>
+              <span class="author-block">Ling Shao<sup>2</sup>,</span>
+              <span class="author-block">Zihan Ye<sup>2</sup><sup>&#9993;</sup></span>
+            </div>
+
+            <div class="is-size-6 publication-authors" style="margin-top: 0.5em;">
+              <span class="author-block"><sup>1</sup>Learning and Intelligent Systems, TU Berlin</span><br>
+              <span class="author-block"><sup>2</sup>UCAS-Terminus AI Lab, University of Chinese Academy of Sciences</span>
+            </div>
+
+            <div class="is-size-5" style="margin-top: 1em;">
+              <strong>ICML 2026</strong>
+            </div>
+
+            <div class="column has-text-centered" style="margin-top: 1.5em;">
+              <div class="publication-links">
+
+                <span class="link-block">
+                  <a href="https://github.com/HongyouZhou/ruac" target="_blank"
+                     class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon"><i class="fab fa-github"></i></span>
+                    <span>Code</span>
+                  </a>
+                </span>
+
+                <!-- TODO: drop the paper PDF into static/pdfs/ruac.pdf, or point href at the arXiv / proceedings URL once available, then re-enable this button. -->
+                <!--
+                <span class="link-block">
+                  <a href="static/pdfs/ruac.pdf" target="_blank"
+                     class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon"><i class="fas fa-file-pdf"></i></span>
+                    <span>Paper</span>
+                  </a>
+                </span>
+                -->
+                <span class="link-block">
+                  <a href="https://github.com/HongyouZhou/ruac" target="_blank"
+                     class="external-link button is-normal is-rounded is-dark"
+                     style="opacity: 0.5; cursor: not-allowed;">
+                    <span class="icon"><i class="fas fa-file-pdf"></i></span>
+                    <span>Paper (coming soon)</span>
+                  </a>
+                </span>
+
+                <span class="link-block">
+                  <a href="#BibTeX"
+                     class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon"><i class="fas fa-quote-right"></i></span>
+                    <span>BibTeX</span>
+                  </a>
+                </span>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Banner image -->
+  <section class="hero teaser">
+    <div class="container is-max-desktop">
+      <div class="hero-body">
+        <img src="static/images/banner.png"
+             alt="RUAC overview: SAM2 vs RUAC mask quality and uncertainty across out-of-domain test images.">
+        <h2 class="subtitle has-text-centered" style="margin-top: 1em;">
+          Vanilla SAM2 returns one confidence number per mask and produces confused uncertainty under domain shift.
+          RUAC adds a Bayesian decoder and adversarial style + deformation training so uncertainty stays meaningfully aligned with errors.
+        </h2>
+      </div>
+    </div>
+  </section>
+
+  <!-- Lay summary (the ICML lay-summary content, front-loaded for non-experts) -->
+  <section class="section hero is-light">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">Lay summary</h2>
+          <div class="content has-text-justified">
+            <p>
+              Segment Anything (SAM, SAM2) outlines an object instance from a click prompt.
+              It works brilliantly on everyday photos but fails on medical X-rays or satellite imagery,
+              and gives one overall confidence number for the whole outline,
+              hiding which pixels are unreliable.
+            </p>
+            <p>
+              We made two changes. First, the decoder now outputs per-pixel uncertainty instead of one overall number.
+              Second, during training, two helper networks generate stress-test images
+              by shifting the object's appearance and bending its shape,
+              forcing the model to stay honestly uncertain rather than artificially confident on those stressed inputs.
+              The two stressors come from human vision research:
+              people rely on shape and stay robust under appearance changes,
+              whereas neural networks over-rely on texture.
+            </p>
+            <p>
+              Across 23 unseen image domains, from X-ray baggage scans to microscopy and urban driving footage,
+              this is the first SAM variant we know of that simultaneously gets more accurate
+              AND produces uncertainty maps that genuinely correlate with its errors.
+              A radiologist can see which patches to trust instead of rechecking the whole prediction.
+              The same calibration trick could transfer to other foundation models.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Abstract -->
+  <section class="section">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">Abstract</h2>
+          <div class="content has-text-justified">
+            <p>
+              Despite strong zero-shot performance, SAM is unreliable under domain shift due to
+              <em>Mask-level Confidence Confusion (MCC)</em>: a single IoU-based mask score fails to
+              reflect pixel-wise reliability near boundaries.
+              Motivated by the contrast between texture-biased shortcuts in neural networks
+              and shape-centric processing in human vision, we model out-of-domain variation
+              as appearance shifts and non-rigid deformations that jointly stress calibration.
+              We propose Segment Anything with <strong>Robust Uncertainty-Accuracy Correlation (RUAC)</strong>
+              for robust pixel-wise uncertainty estimation under appearance and deformation shifts.
+              RUAC adds a lightweight uncertainty head, trains it with a collaborative
+              style-deformation attack that jointly perturbs texture and geometry,
+              and applies Uncertainty-Accuracy Alignment to ensure uncertainty consistently
+              highlights erroneous pixels even under adversarial perturbations.
+              Across 23 zero-shot domains, RUAC improves segmentation quality and yields
+              more faithful uncertainty with stronger uncertainty-accuracy correlation.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Method overview -->
+  <section class="section hero is-light">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3 has-text-centered">Method</h2>
+          <img src="static/images/framework.png" alt="RUAC framework: Bayesian mask decoder, style and deformation adversarial networks, GRL-based min-max training.">
+          <div class="content has-text-justified" style="margin-top: 1em;">
+            <p>
+              RUAC formulates training as a min-max game between two attackers and the segmentation model.
+              The <strong>Style Adversarial Network</strong> builds an object graph from ground-truth masks
+              and visual features, then refines per-object style statistics via GCN layers
+              to generate semantically coherent stylized images.
+              The <strong>Deformation Network</strong> predicts a dense offset field from SAM2 features
+              to produce geometric perturbations.
+              Both attackers train via Gradient Reversal Layers, enabling end-to-end optimization
+              without a PGD-style inner loop.
+              The <strong>Bayesian Mask Decoder</strong> uses dual-granularity Weibull distributions
+              over image tokens (local, boundary-aware) and mask tokens (global, semantic)
+              to model pixel-wise uncertainty, optimizing for uncertainty-accuracy alignment
+              under these bio-inspired perturbations.
+              Training also includes a clean branch (not shown) that maintains in-domain performance.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Results -->
+  <section class="section">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3 has-text-centered">Results</h2>
+
+          <h3 class="title is-5">Segmentation quality on out-of-domain inputs</h3>
+          <img src="static/images/seg_res.png" alt="Qualitative segmentation comparison on Cityscapes, IBD aerial buildings, mixed industrial objects, and hand-object interaction.">
+          <p class="content has-text-justified" style="margin-top: 0.5em;">
+            From top: scene (Cityscapes), scientific (IBD aerial imagery), object (mixed industrial),
+            and egocentric (hand-object). RUAC produces more complete masks on fine boundaries,
+            densely-packed structures, and partially occluded objects.
+          </p>
+
+          <h3 class="title is-5" style="margin-top: 2em;">Confidence and uncertainty maps</h3>
+          <img src="static/images/conf_unc1.png" alt="Confidence and uncertainty maps for SAM2, Bayes-SAM2, and RUAC.">
+          <p class="content has-text-justified" style="margin-top: 0.5em;">
+            SAM2 produces confidence only (no uncertainty estimate).
+            Bayes-SAM2 produces uncertainty but it collapses under domain shift.
+            RUAC's uncertainty concentrates along ambiguous boundaries while leaving high-confidence
+            interiors clean, indicating better calibration. On the OOD PAvPU metric averaged across
+            23 domains, RUAC improves over Bayes-SAM2 by <strong>+8.32 absolute</strong>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BibTeX -->
+  <section class="section" id="BibTeX">
+    <div class="container is-max-desktop content">
+      <h2 class="title">BibTeX</h2>
+      <pre><code>@inproceedings{ruac2026,
+  title     = {Segment Anything with Robust Uncertainty-Accuracy Correlation},
+  author    = {Zhou, Hongyou and Toussaint, Marc and Shao, Ling and Ye, Zihan},
+  booktitle = {Proceedings of the 43rd International Conference on Machine Learning},
+  year      = {2026}
+}</code></pre>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="container">
+    <div class="columns is-centered">
+      <div class="column is-8">
+        <div class="content">
+          <p>
+            This page was built using the
+            <a href="https://github.com/eliahuhorwitz/Academic-project-page-template" target="_blank">Academic Project Page Template</a>
+            (adapted from the <a href="https://nerfies.github.io" target="_blank">Nerfies</a> project page).
+            The template is licensed under
+            <a rel="license" href="http://creativecommons.org/licenses/by-sa/4.0/" target="_blank">CC BY-SA 4.0</a>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
