@@ -1,0 +1,551 @@
+# Reference Hydra config for RUAC training (paper: ICML 2026).
+#
+# Wires:
+#   * `model._target_`         → ruac.adapters.sam2.trainer.SAM2RUACTrain
+#     (forces a BayesianMaskDecoder swap-in and attaches the AUE module)
+#   * `model.aue_config`       → ruac.modeling.aue.AUEConfig (nested dataclass)
+#   * `loss.all._target_`      → ruac.core.losses.combined.CombinedSAMBNDLLoss
+#   * sub-losses               → ruac.core.losses.{bndl,aue}
+#
+# Notes:
+#   - Data paths are placeholders. Set `PROJECT_HOME` env var or edit the
+#     `dataset:` section to point at your MOSE / OOD datasets.
+#   - Only one OOD validation dataset is shown for brevity. Replicate the
+#     `VOSDataset` block under `trainer.data.val.datasets` for additional
+#     evaluation domains.
+#   - The trainer (`training.trainer.Trainer`) and dataset loader pipeline
+#     (`training.dataset.*`) come from the SAM2 fork; ruac plugs in via
+#     `_target_` substitution rather than re-implementing them.
+
+# @package _global_
+
+scratch:
+  resolution: 1024
+  train_batch_size: 2
+  num_train_workers: 4
+  num_frames: 1
+  val_num_frames: 1
+  max_num_objects: 3
+  val_max_videos: 16
+  base_lr: 1.0e-6
+  vision_lr: 1.0e-7
+  phases_per_epoch: 1
+  num_epochs: 20
+
+dataset:
+  img_folder: ${oc.env:PROJECT_HOME}/dev/data/sam2_data/MOSE_release/train/JPEGImages
+  gt_folder: ${oc.env:PROJECT_HOME}/dev/data/sam2_data/MOSE_release/train/Annotations
+  file_list_txt: ${oc.env:PROJECT_HOME}/dev/ada_samp/sam2/training/assets/MOSE_sample_train_list.txt
+  multiplier: 4
+  val_img_folder: ${oc.env:PROJECT_HOME}/dev/data/sam2_data/MOSE_release/train/JPEGImages
+  val_gt_folder: ${oc.env:PROJECT_HOME}/dev/data/sam2_data/MOSE_release/train/Annotations
+  val_file_list_txt: ${oc.env:PROJECT_HOME}/dev/ada_samp/sam2/training/assets/MOSE_sample_val_list.txt
+  val_multiplier: 1
+
+vos:
+  train_transforms:
+    - _target_: training.dataset.transforms.ComposeAPI
+      transforms:
+        - _target_: training.dataset.transforms.RandomHorizontalFlip
+          consistent_transform: True
+        - _target_: training.dataset.transforms.RandomAffine
+          degrees: 25
+          shear: 20
+          image_interpolation: bilinear
+          consistent_transform: True
+          num_tentatives: 8
+        - _target_: training.dataset.transforms.RandomResizeAPI
+          sizes: ${scratch.resolution}
+          square: true
+          consistent_transform: True
+        - _target_: training.dataset.transforms.ColorJitter
+          consistent_transform: True
+          brightness: 0.1
+          contrast: 0.03
+          saturation: 0.03
+          hue: null
+        - _target_: training.dataset.transforms.RandomGrayscale
+          p: 0.05
+          consistent_transform: True
+        - _target_: training.dataset.transforms.ColorJitter
+          consistent_transform: False
+          brightness: 0.1
+          contrast: 0.05
+          saturation: 0.05
+          hue: null
+        - _target_: training.dataset.transforms.ToTensorAPI
+        - _target_: training.dataset.transforms.NormalizeAPI
+          mean: [0.485, 0.456, 0.406]
+          std: [0.229, 0.224, 0.225]
+
+  val_transforms:
+    - _target_: training.dataset.transforms.ComposeAPI
+      transforms:
+        - _target_: training.dataset.transforms.RandomResizeAPI
+          sizes: ${scratch.resolution}
+          square: true
+          consistent_transform: True
+        - _target_: training.dataset.transforms.ToTensorAPI
+        - _target_: training.dataset.transforms.NormalizeAPI
+          mean: [0.485, 0.456, 0.406]
+          std:  [0.229, 0.224, 0.225]
+
+trainer:
+  _target_: training.trainer.Trainer
+  mode: train
+  max_epochs: ${times:${scratch.num_epochs},${scratch.phases_per_epoch}}
+  actual_max_epochs: 20
+  val_epoch_freq: 1
+  accelerator: cuda
+  seed_value: 123
+  gradient_accumulation_steps: 2
+  cuda:
+    allow_tf32: true
+    cudnn_benchmark: true
+
+  # === The RUAC model: SAM2Train + Bayesian decoder swap + AUE wiring ===
+  model:
+    _target_: ruac.adapters.sam2.trainer.SAM2RUACTrain
+
+    image_encoder:
+      _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
+      scalp: 1
+      trunk:
+        _target_: sam2.modeling.backbones.hieradet.Hiera
+        embed_dim: 112
+        num_heads: 2
+        drop_path_rate: 0.1
+      neck:
+        _target_: sam2.modeling.backbones.image_encoder.FpnNeck
+        position_encoding:
+          _target_: sam2.modeling.position_encoding.PositionEmbeddingSine
+          num_pos_feats: 256
+          normalize: true
+          scale: null
+          temperature: 10000
+        d_model: 256
+        backbone_channel_list: [896, 448, 224, 112]
+        fpn_top_down_levels: [2, 3]
+        fpn_interp_model: nearest
+
+    memory_attention:
+      _target_: sam2.modeling.memory_attention.MemoryAttention
+      d_model: 256
+      pos_enc_at_input: true
+      layer:
+        _target_: sam2.modeling.memory_attention.MemoryAttentionLayer
+        activation: relu
+        dim_feedforward: 2048
+        dropout: 0.1
+        pos_enc_at_attn: false
+        self_attention:
+          _target_: sam2.modeling.sam.transformer.RoPEAttention
+          rope_theta: 10000.0
+          feat_sizes: [64, 64]
+          embedding_dim: 256
+          num_heads: 1
+          downsample_rate: 1
+          dropout: 0.1
+        d_model: 256
+        pos_enc_at_cross_attn_keys: true
+        pos_enc_at_cross_attn_queries: false
+        cross_attention:
+          _target_: sam2.modeling.sam.transformer.RoPEAttention
+          rope_theta: 10000.0
+          feat_sizes: [64, 64]
+          rope_k_repeat: True
+          embedding_dim: 256
+          num_heads: 1
+          downsample_rate: 1
+          dropout: 0.1
+          kv_in_dim: 64
+      num_layers: 4
+
+    memory_encoder:
+      _target_: sam2.modeling.memory_encoder.MemoryEncoder
+      out_dim: 64
+      position_encoding:
+        _target_: sam2.modeling.position_encoding.PositionEmbeddingSine
+        num_pos_feats: 64
+        normalize: true
+        scale: null
+        temperature: 10000
+      mask_downsampler:
+        _target_: sam2.modeling.memory_encoder.MaskDownSampler
+        kernel_size: 3
+        stride: 2
+        padding: 1
+      fuser:
+        _target_: sam2.modeling.memory_encoder.Fuser
+        layer:
+          _target_: sam2.modeling.memory_encoder.CXBlock
+          dim: 256
+          kernel_size: 7
+          padding: 3
+          layer_scale_init_value: 1e-6
+          use_dwconv: True
+        num_layers: 2
+
+    num_maskmem: 7
+    image_size: ${scratch.resolution}
+    sigmoid_scale_for_mem_enc: 20.0
+    sigmoid_bias_for_mem_enc: -10.0
+    use_mask_input_as_output_without_sam: false
+    directly_add_no_mem_embed: true
+    no_obj_embed_spatial: true
+    use_high_res_features_in_sam: true
+    multimask_output_in_sam: true
+    iou_prediction_use_sigmoid: True
+    use_obj_ptrs_in_encoder: true
+    add_tpos_enc_to_obj_ptrs: true
+    proj_tpos_enc_in_obj_ptrs: true
+    use_signed_tpos_enc_to_obj_ptrs: true
+    only_obj_ptrs_in_the_past_for_eval: true
+    pred_obj_scores: true
+    pred_obj_scores_mlp: true
+    fixed_no_obj_ptr: true
+    multimask_output_for_tracking: true
+    use_multimask_token_for_obj_ptr: true
+    multimask_min_pt_num: 0
+    multimask_max_pt_num: 1
+    use_mlp_for_obj_ptr_proj: true
+
+    # BNDL hyper-parameters consumed by the BayesianMaskDecoder swap-in inside
+    # SAM2RUACTrain._install_bayesian_decoder. Parent's `use_bndl_for_pixels`
+    # / `use_ur_ern_for_pixels` are intentionally NOT set: the swap installs
+    # `pixel_bndl` directly, bypassing the SAM2 fork's BNDL flag plumbing.
+    sam_mask_decoder_extra_args:
+      bndl_factor_z: 0.0
+      bndl_factor_w: 0.0
+      bndl_force_single_sample: false
+      bndl_sample_num: 20
+
+    freeze_image_encoder: true
+    freeze_image_encoder_epochs: 20
+    unfreeze_image_encoder_components: []
+
+    epsilon_decay_start_epoch: 0
+    epsilon_decay_end_epoch: 0
+    epsilon_min_ratio: 0.1
+
+    max_num_objects: ${scratch.max_num_objects}
+
+    # === Adversarial Uncertainty Estimation (paper §3.3) ===
+    aue_config:
+      _target_: ruac.modeling.aue.config.AUEConfig
+      enabled: true
+      use_analytic_uncertainty: true
+      use_multi_object: true
+      enable_background: true
+      max_num_objects: ${scratch.max_num_objects}
+      attack_order: [style, deform]
+
+      style:
+        _target_: ruac.modeling.aue.config.StyleAdvConfig
+        enabled: true
+        mode: image_level
+        epsilon: 0.3
+        use_gt_region_style: true
+        use_global_local_mix: false
+        global_epsilon: 0.5
+        global_weight: 0.5
+        gcn:
+          _target_: ruac.modeling.aue.config.StyleGCNConfig
+          enabled: true
+          hidden_dim: 64
+          num_layers: 2
+          edge_threshold: 0.0
+          use_semantic_edges: true
+          use_background_edges: true
+          distance_threshold: 1.0
+          use_boundary_distance: true
+          use_visual_features: true
+          feature_dim: 256
+          feature_sim_threshold: 0.5
+
+      deform:
+        _target_: ruac.modeling.aue.config.DeformAdvConfig
+        enabled: true
+        epsilon: 0.15
+        use_soft_composite: true
+        temperature: 1.0
+        use_gcn: false
+        gcn_num_layers: 2
+        num_deform_groups: 4
+        init_from_memory_encoder: true
+        freeze_encoder_components: true
+        zero_mean_offsets: true
+        local_offset_gain: 1.0
+
+    # === SAM2Train interactive prompting / iterative refinement ===
+    prob_to_use_pt_input_for_train: 0.5
+    prob_to_use_pt_input_for_eval: 0.0
+    prob_to_use_box_input_for_train: 0.5
+    prob_to_use_box_input_for_eval: 0.0
+    prob_to_sample_from_gt_for_train: 0.1
+    num_frames_to_correct_for_train: 2
+    num_frames_to_correct_for_eval: 1
+    rand_frames_to_correct_for_train: True
+    add_all_frames_to_correct_as_cond: True
+    num_init_cond_frames_for_train: 2
+    rand_init_cond_frames_for_train: True
+    num_correction_pt_per_frame: 7
+    use_act_ckpt_iterative_pt_sampling: false
+    num_init_cond_frames_for_eval: 1
+    forward_backbone_per_frame_for_eval: True
+
+  data:
+    train:
+      _target_: training.dataset.sam2_datasets.TorchTrainMixedDataset
+      phases_per_epoch: ${scratch.phases_per_epoch}
+      batch_sizes:
+        - ${scratch.train_batch_size}
+      datasets:
+        - _target_: training.dataset.utils.RepeatFactorWrapper
+          dataset:
+            _target_: training.dataset.utils.ConcatDataset
+            datasets:
+              - _target_: training.dataset.vos_dataset.VOSDataset
+                transforms: ${vos.train_transforms}
+                training: true
+                video_dataset:
+                  _target_: training.dataset.vos_raw_dataset.PNGRawDataset
+                  img_folder: ${dataset.img_folder}
+                  gt_folder: ${dataset.gt_folder}
+                  file_list_txt: ${dataset.file_list_txt}
+                sampler:
+                  _target_: training.dataset.vos_sampler.RandomUniformSampler
+                  num_frames: ${scratch.num_frames}
+                  max_num_objects: ${scratch.max_num_objects}
+                multiplier: ${dataset.multiplier}
+      shuffle: True
+      num_workers: ${scratch.num_train_workers}
+      pin_memory: True
+      drop_last: True
+      persistent_workers: True
+      prefetch_factor: 2
+      collate_fn:
+        _target_: training.utils.data_utils.collate_fn
+        _partial_: true
+        dict_key: all
+
+    # Replicate this VOSDataset block under `datasets:` for additional OOD
+    # evaluation domains (the paper reports 23). Source paths are placeholders.
+    val:
+      _target_: training.dataset.sam2_datasets.TorchTrainMixedDataset
+      phases_per_epoch: 1
+      batch_sizes:
+        - 1
+      datasets:
+        - _target_: training.dataset.utils.ConcatDataset
+          datasets:
+            - _target_: training.dataset.vos_dataset.VOSDataset
+              transforms: ${vos.val_transforms}
+              training: false
+              video_dataset:
+                _target_: training.dataset.vos_raw_dataset.PNGRawDataset
+                img_folder: ${dataset.val_img_folder}
+                gt_folder: ${dataset.val_gt_folder}
+                file_list_txt: ${dataset.val_file_list_txt}
+                max_videos: ${scratch.val_max_videos}
+              sampler:
+                _target_: training.dataset.vos_sampler.RandomUniformSampler
+                num_frames: ${scratch.val_num_frames}
+                max_num_objects: ${scratch.max_num_objects}
+              multiplier: 1
+      shuffle: False
+      num_workers: ${scratch.num_train_workers}
+      pin_memory: True
+      drop_last: False
+      persistent_workers: True
+      prefetch_factor: 2
+      collate_fn:
+        _target_: training.utils.data_utils.collate_fn
+        _partial_: true
+        dict_key: val
+
+  optim:
+    amp:
+      enabled: True
+      amp_dtype: bfloat16
+
+    optimizer:
+      _target_: torch.optim.AdamW
+
+    gradient_clip:
+      _target_: training.optimizer.GradientClipper
+      max_norm: 0.1
+      norm_type: 2
+
+    param_group_modifiers:
+      - _target_: training.optimizer.layer_decay_param_modifier
+        _partial_: True
+        layer_decay_value: 0.9
+        apply_to: 'image_encoder.trunk'
+        overrides:
+          - pattern: '*pos_embed*'
+            value: 1.0
+
+    options:
+      lr:
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.CosineParamScheduler
+            start_value: ${scratch.base_lr}
+            end_value: ${divide:${scratch.base_lr},10}
+
+        # BayesianMaskDecoder's pixel_bndl: higher LR (Weibull head trains fast)
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.CosineParamScheduler
+            start_value: 1.0e-4
+            end_value: 1.0e-5
+          param_names:
+            - 'sam_mask_decoder.pixel_bndl.*'
+
+        # Vanilla SAM2 hypernet MLPs are unused after the BNDL swap (kept only
+        # for state_dict compatibility with SAM2 pretrained checkpoints).
+        # Force LR=0 so they don't drift.
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+            value: 0.0
+          param_names:
+            - 'sam_mask_decoder.output_hypernetworks_mlps.*'
+
+        # AUE attacker networks (Style/Deform/GCN): high LR, cosine to 1/10.
+        # Replaces the legacy separate `attacker_optim` so attackers train
+        # under the single main optimizer along with everything else.
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.CosineParamScheduler
+            start_value: 1.0e-3
+            end_value: 1.0e-4
+          param_names:
+            - 'style_attacker.*'
+            - 'deform_attacker.*'
+            - 'style_gcn.*'
+          optional: true  # Skip if AUE is disabled (no attacker params)
+
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.CosineParamScheduler
+            start_value: ${scratch.vision_lr}
+            end_value: ${divide:${scratch.vision_lr},10}
+          param_names:
+            - image_encoder.*
+
+      weight_decay:
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+            value: 0.1
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+            value: 0.0
+          param_names:
+            - '*bias*'
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+            value: 0.0
+          module_cls_names: ['torch.nn.LayerNorm']
+          exclude_param_names: ['*bias*']
+
+  # === Loss orchestration: SAM task + BNDL KL + AUE adv (task + KL + L_cal_sym) ===
+  loss:
+    all:
+      _target_: ruac.core.losses.combined.CombinedSAMBNDLLoss
+      sam_loss:
+        _target_: training.loss_fns.MultiStepMultiMasksAndIous
+        weight_dict:
+          loss_mask: 20.0
+          loss_dice: 1.0
+          loss_iou: 1.0
+          loss_class: 1.0
+        supervise_all_iou: true
+        iou_use_l1_loss: true
+        pred_obj_scores: true
+        focal_gamma_obj_score: 0.0
+        focal_alpha_obj_score: -1.0
+      bndl_loss:
+        _target_: ruac.core.losses.bndl.BNDLLoss
+        kl_weight: 1e-11
+        kl_weight_x: 1e-11
+        kl_weight_w: 1e-11
+        prior_gamma_shape: 1.0
+        prior_gamma_scale: 3.0
+        ur_weight: 0.0
+      aue_loss:
+        _target_: ruac.core.losses.aue.AUELoss
+        task_weight: 1.0      # Coefficient on L_seg^adv (decoder min via GRL flip on attacker)
+        bndl_weight: 0.05     # β·L_KL^adv (matches clean β=0.05 in Phase 3)
+        cal_weight: 0.1       # λ on L_cal_sym (paper Eq. 5 + dual-SG L2); joint min-max in core_loss
+        dual_sg_l2_weight: 1.0  # Multiplier on L2 mirror term in L_cal_sym (1.0 = symmetric)
+      ur_ern_loss: null
+      sam_weight: 1.0
+      bndl_weight: 0.0
+      aue_weight: 0.0
+      ur_ern_weight: 0.0
+      # Curriculum: SAM only → +BNDL → +AUE adv branch (paper §3.5).
+      weight_schedule:
+        - until_epoch: 4
+          bndl_weight: 0.0
+          aue_weight: 0.0
+        - until_epoch: 6
+          sam_weight: 1.0
+          bndl_weight: 0.05
+          aue_weight: 0.0
+        - until_epoch: null
+          sam_weight: 0.8
+          bndl_weight: 0.05
+          aue_weight: 0.2
+    val:
+      _target_: ruac.core.losses.combined.CombinedSAMBNDLLoss
+      sam_loss: ${trainer.loss.all.sam_loss}
+      bndl_loss: ${trainer.loss.all.bndl_loss}
+      aue_loss: ${trainer.loss.all.aue_loss}
+      ur_ern_loss: ${trainer.loss.all.ur_ern_loss}
+      sam_weight: 1.0
+      bndl_weight: 1.0
+      aue_weight: 0.0
+      ur_ern_weight: 0.0
+      prefix_keys: False
+
+  distributed:
+    backend: nccl
+    find_unused_parameters: True
+
+  logging:
+    tensorboard_writer:
+      _target_: training.utils.logger.make_tensorboard_logger
+      log_dir: ${launcher.experiment_log_dir}/tensorboard
+      flush_secs: 5
+      should_log: True
+    log_dir: ${launcher.experiment_log_dir}/logs
+    log_freq: 10
+    log_scalar_frequency: 10
+    log_visual_frequency: 5
+    visualize_bndl: false
+    # ruac does not emit `aue_visualization` in outputs, so the SAM2 fork's
+    # `_log_*aue*_visualization` callbacks become inert no-ops.
+    visualize_aue: false
+    enable_pavpu_eval: true
+    uncertainty_sample_num: 50
+    correlation_per_pixel: true
+
+  checkpoint:
+    save_dir: ${launcher.experiment_log_dir}/checkpoints
+    save_freq: 0
+    model_weight_initializer:
+      _partial_: True
+      _target_: training.utils.checkpoint_utils.load_state_dict_into_model
+      strict: False
+      ignore_missing_keys: []
+      ignore_unexpected_keys: []
+      checkpoint_kernels:
+        - _target_: training.utils.checkpoint_utils.CkptExcludeKernel
+          key_pattern:
+            - 'sam_mask_decoder.output_hypernetworks_mlps.*'
+      state_dict:
+        _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
+        checkpoint_path: ${oc.env:PROJECT_HOME}/dev/ada_samp/sam2/checkpoints/sam2.1_hiera_base_plus.pt
+        ckpt_state_dict_keys: ['model']
+
+launcher:
+  num_nodes: 1
+  gpus_per_node: 8
+  experiment_log_dir: ${oc.env:PROJECT_HOME}/dev/ada_samp/logs/sam2/ruac_default
