@@ -137,7 +137,7 @@
     </div>
   </section>
 
-  <!-- Lay summary: temporarily hidden, restore by removing the wrapping HTML comment.
+  <!--
   <section class="section hero is-light">
     <div class="container is-max-desktop">
       <div class="columns is-centered has-text-centered">
@@ -145,26 +145,27 @@
           <h2 class="title is-3">Lay summary</h2>
           <div class="content has-text-justified">
             <p>
-              Segment Anything (SAM, SAM2) outlines an object instance from a click prompt.
-              It works brilliantly on everyday photos but fails on medical X-rays or satellite imagery,
-              and gives one overall confidence number for the whole outline,
-              hiding which pixels are unreliable.
+              The Segment Anything Model (SAM, SAM2) segments an object instance from a set of click prompts
+              and reports a single confidence number for the predicted mask.
+              On images outside SAM2's training domain, such as X-rays or first-person video,
+              the predictions become harder to interpret,
+              and that confidence number stops reflecting whether each mask is correct,
+              leaving users with no way to tell which pixels to trust.
             </p>
             <p>
               We made two changes. First, the decoder now outputs per-pixel uncertainty instead of one overall number.
-              Second, during training, two helper networks generate stress-test images
-              by shifting the object's appearance and bending its shape,
-              forcing the model to stay honestly uncertain rather than artificially confident on those stressed inputs.
-              The two stressors come from human vision research:
-              people rely on shape and stay robust under appearance changes,
-              whereas neural networks over-rely on texture.
+              Second, two adversarial helper networks perturb each training image,
+              shifting the object's appearance and bending its shape,
+              searching for cases where the model is wrong but confident, or right but uncertain.
+              Training on these hard cases teaches the model to keep uncertainty aligned with prediction error,
+              an alignment that then generalizes to image domains never seen during training.
             </p>
             <p>
-              Across 23 unseen image domains, from X-ray baggage scans to microscopy and urban driving footage,
-              this is the first SAM variant we know of that simultaneously gets more accurate
-              AND produces uncertainty maps that genuinely correlate with its errors.
-              A radiologist can see which patches to trust instead of rechecking the whole prediction.
-              The same calibration trick could transfer to other foundation models.
+              Tested across 23 image domains spanning everyday objects, urban and indoor scenes,
+              scientific imaging (X-rays, microscopy), and first-person video,
+              RUAC is the first SAM variant whose uncertainty maps stay aligned with prediction errors at this scale.
+              A radiologist can see which regions to trust instead of rechecking the whole prediction.
+              The same training recipe could transfer to other foundation models.
             </p>
           </div>
         </div>
@@ -172,7 +173,6 @@
     </div>
   </section>
   -->
-  <!-- end lay summary -->
 
   <!-- Abstract -->
   <section class="section">
