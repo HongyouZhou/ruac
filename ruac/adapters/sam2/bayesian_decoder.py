@@ -30,6 +30,18 @@ from sam2.modeling.sam.mask_decoder import MaskDecoder
 
 from ruac.core.bndl import pixel_weibull_to_entropy_uncertainty
 
+_MASK_TOKEN_AXES = {
+    "wei_lambda_w": 1,
+    "inv_k_w": 1,
+    "masks_bndl_raw": -1,
+    "pixel_uncertainty_sampling": -1,
+    "pixel_uncertainty_analytic": -1,
+    "pixel_uncertainty": -1,
+    "pixel_logits": -1,
+    "mask_tokens_out": 1,
+    "masks_bndl": 1,
+}
+
 
 class BayesianMaskDecoder(MaskDecoder):
     """SAM2 MaskDecoder with a Weibull-Bayesian pixel head.
@@ -71,6 +83,93 @@ class BayesianMaskDecoder(MaskDecoder):
             2,
             mask_token_dim=self.transformer_dim,
         )
+
+    @staticmethod
+    def _gather_mask_tokens(
+        value: torch.Tensor,
+        token_axis: int,
+        token_indices: torch.Tensor,
+    ) -> torch.Tensor:
+        """Select per-batch mask-token channels along ``token_axis``."""
+        token_axis %= value.ndim
+        index_shape = [1] * value.ndim
+        index_shape[0] = token_indices.shape[0]
+        index_shape[token_axis] = token_indices.shape[1]
+        expanded_shape = list(value.shape)
+        expanded_shape[token_axis] = token_indices.shape[1]
+        gather_index = token_indices.reshape(index_shape).expand(expanded_shape)
+        return torch.gather(value, token_axis, gather_index)
+
+    def _align_inference_aux_outputs(
+        self,
+        masks: torch.Tensor,
+        aux_outputs: dict,
+        *,
+        multimask_output: bool,
+    ) -> dict:
+        """Align public aux channels with the masks selected by SAM2.
+
+        SAM2 internally predicts one single-mask token followed by three
+        multimask tokens. Its public forward path returns tokens 1..3 for
+        ``multimask_output=True`` or token 0 for the normal single-mask path,
+        while the BNDL auxiliary tensors originate from all four raw tokens.
+        Keep the raw tensors under ``all_mask_tokens`` and expose aligned
+        tensors at the existing public keys.
+        """
+        bndl_outputs = aux_outputs.get("bndl")
+        if not isinstance(bndl_outputs, dict):
+            return aux_outputs
+
+        batch_size = masks.shape[0]
+        if multimask_output:
+            token_indices = torch.arange(1, self.num_mask_tokens, device=masks.device).expand(batch_size, -1)
+        elif self.dynamic_multimask_via_stability:
+            raw_masks = bndl_outputs.get("masks_bndl")
+            if not isinstance(raw_masks, torch.Tensor):
+                return aux_outputs
+            squared_error = (raw_masks.float() - masks[:, :1].float()).square().mean(dim=(-2, -1))
+            token_indices = squared_error.argmin(dim=1, keepdim=True)
+        else:
+            token_indices = torch.zeros((batch_size, 1), dtype=torch.long, device=masks.device)
+
+        all_mask_tokens: dict[str, torch.Tensor | None] = {}
+        for key, token_axis in _MASK_TOKEN_AXES.items():
+            value = bndl_outputs.get(key)
+            all_mask_tokens[key] = value
+            if isinstance(value, torch.Tensor):
+                bndl_outputs[key] = self._gather_mask_tokens(value, token_axis, token_indices)
+
+        bndl_outputs["all_mask_tokens"] = all_mask_tokens
+        bndl_outputs["output_mask_token_indices"] = token_indices
+        return aux_outputs
+
+    def forward(
+        self,
+        image_embeddings: torch.Tensor,
+        image_pe: torch.Tensor,
+        sparse_prompt_embeddings: torch.Tensor,
+        dense_prompt_embeddings: torch.Tensor,
+        multimask_output: bool,
+        repeat_image: bool,
+        high_res_features: list[torch.Tensor] | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict]:
+        outputs = super().forward(
+            image_embeddings=image_embeddings,
+            image_pe=image_pe,
+            sparse_prompt_embeddings=sparse_prompt_embeddings,
+            dense_prompt_embeddings=dense_prompt_embeddings,
+            multimask_output=multimask_output,
+            repeat_image=repeat_image,
+            high_res_features=high_res_features,
+        )
+        masks, iou_pred, sam_tokens_out, object_score_logits, aux_outputs = outputs
+        if not self.training:
+            aux_outputs = self._align_inference_aux_outputs(
+                masks,
+                aux_outputs,
+                multimask_output=multimask_output,
+            )
+        return masks, iou_pred, sam_tokens_out, object_score_logits, aux_outputs
 
     def predict_masks(
         self,

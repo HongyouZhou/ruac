@@ -80,8 +80,15 @@ masks, predicted_iou, _ = predictor.predict(
 selected = int(np.argmax(predicted_iou))
 mask = masks[selected] > 0
 aux = predictor.get_last_aux_outputs()
-uncertainty = aux["bndl"]["pixel_uncertainty_sampling"][0, :, :, selected]
+uncertainty_candidates = aux["bndl"]["pixel_uncertainty_sampling"][0]
+assert uncertainty_candidates.shape[-1] == masks.shape[0]
+uncertainty = uncertainty_candidates[:, :, selected]
 ```
+
+The loader aligns uncertainty channels with the masks returned by SAM2. The
+four internal mask-token channels are retained under
+`aux["bndl"]["all_mask_tokens"]` for reproducing the original evaluation's
+all-hypothesis aggregation.
 
 See the complete [model loading guide](https://github.com/HongyouZhou/ruac/blob/main/docs/model_loading.md)
 and [runnable inference example](https://github.com/HongyouZhou/ruac/blob/main/examples/image_inference.py).

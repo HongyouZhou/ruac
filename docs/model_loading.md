@@ -68,14 +68,28 @@ masks, predicted_iou, low_res_logits = predictor.predict(
 selected = int(np.argmax(predicted_iou))
 mask = masks[selected] > 0
 aux = predictor.get_last_aux_outputs()
-uncertainty_low_res = aux["bndl"]["pixel_uncertainty_sampling"][
-    0, :, :, selected
-]
+uncertainty_candidates = aux["bndl"]["pixel_uncertainty_sampling"][0]
+assert uncertainty_candidates.shape[-1] == masks.shape[0]
+uncertainty_low_res = uncertainty_candidates[:, :, selected]
 ```
 
 `uncertainty_low_res` is a low-resolution entropy map. Resize it to the input
 image size with bilinear interpolation for visualization. Entropy ranges from
 0 to `ln(2)` for the Bernoulli mask prediction.
+
+At inference, RUAC aligns the public BNDL auxiliary channels with SAM2's mask
+selection: three uncertainty channels are returned for three multimask
+candidates, and one channel is returned for single-mask prediction. The four
+internal SAM2 mask-token channels remain available under
+`aux["bndl"]["all_mask_tokens"]`. To reproduce the original evaluation's
+all-hypothesis uncertainty aggregation, use:
+
+```python
+raw_uncertainty = aux["bndl"]["all_mask_tokens"][
+    "pixel_uncertainty_sampling"
+][0]
+uncertainty_all_hypotheses = raw_uncertainty.mean(dim=-1)
+```
 
 The runnable example performs the resize and writes `mask.png`,
 `uncertainty.png`, and the raw `uncertainty.npy`:

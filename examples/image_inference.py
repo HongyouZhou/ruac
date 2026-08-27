@@ -70,9 +70,12 @@ def main() -> None:
     binary_mask = masks[selected_index] > 0.0
     aux_outputs = predictor.get_last_aux_outputs()
     try:
-        uncertainty_low_res = aux_outputs["bndl"]["pixel_uncertainty_sampling"][0, :, :, selected_index]
+        uncertainty_candidates = aux_outputs["bndl"]["pixel_uncertainty_sampling"][0]
     except (KeyError, TypeError, IndexError) as exc:
         raise RuntimeError("RUAC inference did not return a BNDL uncertainty map") from exc
+    if uncertainty_candidates.shape[-1] != masks.shape[0]:
+        raise RuntimeError(f"RUAC uncertainty channels are not aligned with the returned masks: {uncertainty_candidates.shape[-1]} != {masks.shape[0]}")
+    uncertainty_low_res = uncertainty_candidates[:, :, selected_index]
     uncertainty = (
         F.interpolate(
             uncertainty_low_res.float()[None, None],
