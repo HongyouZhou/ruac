@@ -206,6 +206,10 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
+# Model release artifacts (publish these to Hugging Face, not GitHub)
+*.safetensors
+*.pt
+
 # PyPI configuration file
 .pypirc
 

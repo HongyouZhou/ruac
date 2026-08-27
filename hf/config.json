@@ -1,0 +1,11 @@
+{
+  "architectures": [
+    "SAM2RUACTrain"
+  ],
+  "base_model": "facebook/sam2.1-hiera-base-plus",
+  "code_repository": "https://github.com/HongyouZhou/ruac",
+  "default_mc_samples": 20,
+  "image_size": 1024,
+  "model_type": "ruac-sam2",
+  "weights": "model.safetensors"
+}

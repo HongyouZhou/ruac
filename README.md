@@ -25,14 +25,37 @@ Trained jointly under a curriculum (clean → +KL → +AUE) on MOSE; evaluated z
 ## Install
 
 ```bash
-git clone https://github.com/HongyouZhou/sam2.git
+git clone --branch version/019 https://github.com/HongyouZhou/sam2.git
 git clone https://github.com/HongyouZhou/BNDL.git
 git clone https://github.com/HongyouZhou/ruac.git
-pip install -e sam2 && pip install -e BNDL && pip install -e ruac
-export PYTHONPATH=$PWD/sam2:$PWD/BNDL:$PWD/BNDL/BNDL_upload:$PYTHONPATH
+python -m pip install -e sam2
+python -m pip install -e './ruac[hub]'
+export PYTHONPATH=$PWD:$PWD/sam2:$PWD/BNDL:$PWD/BNDL/BNDL_upload:$PYTHONPATH
 ```
 
 Tested with Python 3.12 and PyTorch 2.x (CUDA 12).
+
+## Pretrained model
+
+The released SAM 2.1 Hiera Base Plus checkpoint is hosted at
+[`HongyouZhou/ruac-sam2.1-hiera-bplus`](https://huggingface.co/HongyouZhou/ruac-sam2.1-hiera-bplus).
+Load it through RUAC's validated SAM2 adapter:
+
+```python
+from ruac.hub import load_ruac_predictor
+
+predictor = load_ruac_predictor(device="cuda", mc_samples=20)
+```
+
+The default of 20 Monte Carlo samples is the main release setting. Other sample
+counts are sensitivity experiments. RUAC is not a Transformers `AutoModel`;
+the custom loader constructs the Bayesian mask decoder and omits training-only
+attackers during inference.
+
+For local checkpoints, image inference, uncertainty-map extraction, exact
+dependency commits, and checksum verification, see the
+**[model loading guide](docs/model_loading.md)**. A runnable example is provided
+at [`examples/image_inference.py`](examples/image_inference.py).
 
 ## Train
 
@@ -56,7 +79,8 @@ ruac/
 │   ├── trainer.py
 │   └── aue_module.py
 ├── modeling/            shared helpers (style GCN, AUE config + viz)
-└── configs/sam2_ruac_train.yaml
+├── configs/sam2_ruac_train.yaml
+└── hub.py               validated local/Hugging Face checkpoint loader
 ```
 
 ## Citation

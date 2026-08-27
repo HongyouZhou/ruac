@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Robust Uncertainty-Accuracy Correlation for SAM2 (ICML 2026)"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Hongyou Zhou"},
 ]
@@ -23,15 +23,19 @@ dependencies = [
 
 [project.optional-dependencies]
 viz = ["matplotlib", "tensorboard"]
+hub = ["huggingface_hub>=0.31", "safetensors>=0.5"]
 dev = ["ruff", "pytest"]
 
 [project.urls]
 Homepage = "https://github.com/HongyouZhou/ruac"
-Paper = "https://github.com/HongyouZhou/ruac"
+Paper = "https://arxiv.org/abs/2605.10603"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ruac*"]
+
+[tool.setuptools.package-data]
+"ruac.configs" = ["*.yaml"]
 
 [tool.ruff]
 line-length = 196
